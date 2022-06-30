@@ -1,0 +1,11 @@
+certifi==2022.6.15
+charset-normalizer==2.0.12
+idna==3.3
+python-dotenv==0.20.0
+requests==2.28.0
+urllib3==1.26.9
+
+linkedin-api~=2.0.0a5
+beautifulsoup4==4.11.1
+lxml==4.9.0
+soupsieve==2.3.2.post1
