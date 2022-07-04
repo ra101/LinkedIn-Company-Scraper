@@ -27,7 +27,16 @@ class LinkedInExtented(Linkedin):
     def _post(self, *args, **kwargs):
         raise UnImplementedError()
 
-    def get_company(self, company_username):
+
+    def get_company_username(self, company_link):
+        try:
+            company_username = company_link.split('.com/company/')[1].replace('/','')
+        except:
+            raise ValueError("Use company link like https://www.linkedin.com/company/unilever/ only!")
+        return company_username
+
+
+    def get_company(self, company_username=None, company_link=None):
         """
         Fetch data about a given LinkedIn company.
 
@@ -37,6 +46,16 @@ class LinkedInExtented(Linkedin):
         :return: Company data
         :rtype: dict
         """
+
+        if not any([company_username, company_link]):
+            raise AttributeError("Provide atleast `company_username` or `company_link`")
+
+        if not company_username:
+            try:
+                company_username = company_link.split('.com/company/')[1].replace('/','')
+            except:
+                raise AttributeError("Use company link like https://www.linkedin.com/company/unilever/ only!")
+
         params = {
             "decorationId": "com.linkedin.voyager.dash.deco.organization.MemberCompany-65",
             "q": "universalName",
