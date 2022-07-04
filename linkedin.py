@@ -1,4 +1,8 @@
+from copy import deepcopy
+
 from linkedin_api.linkedin import Linkedin, default_evade
+
+from celery_queue import celery
 
 
 class UnImplementedError(Exception):
@@ -141,7 +145,6 @@ class LinkedInExtented(Linkedin):
             "PAST": self._get_company_events(universal_name, "PAST"),
         }
 
-
     def get_employees(self, company_details):
 
         resp = super().search_people(
@@ -163,9 +166,27 @@ class LinkedInExtented(Linkedin):
 
         return result
 
+@celery.task()
+def get_all_details(linkedin_email, linkedin_password, company_details, jobs=False, posts=False, employees=False, events=False):
 
-linkedin_email = "" # place your linkedin login email
-linkedin_password = ""
+    linked_in = LinkedInExtented(linkedin_email, linkedin_password)
+    final_company_details = deepcopy(company_details)
+
+    if jobs:
+        final_company_details['jobs'] = linked_in.get_jobs(company_details)
+
+    if posts:
+        final_company_details['posts'] = linked_in.get_company_posts(company_details)
+
+    if employees:
+        final_company_details['employees'] = linked_in.get_employees(company_details)
+
+    if events:
+        final_company_details['events'] = linked_in.get_company_events(company_details)
+
+
+linkedin_email = "agarwal.parth.101@gmail.com" # place your linkedin login email
+linkedin_password = "32432"
 
 
 l = LinkedInExtented(linkedin_email, linkedin_password)
