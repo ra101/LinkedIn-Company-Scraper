@@ -1,3 +1,5 @@
+import asyncio
+from functools import partial
 from copy import deepcopy
 
 from linkedin_api.linkedin import Linkedin, default_evade
@@ -10,6 +12,10 @@ class UnImplementedError(Exception):
 
 
 class LinkedInExtented(Linkedin):
+
+    loop = asyncio.get_event_loop()
+    asyncronize = lambda self, func, *args: self.loop.run_in_executor(None, func, *args)
+
 
     def _fetch(self, uri, evade=default_evade, base_request=False, headers={}, **kwargs):
         """
@@ -90,12 +96,15 @@ class LinkedInExtented(Linkedin):
             "industry": [i['name'] for i in resp.get("industry", {}).values()],
         }
 
-    def get_jobs(self, company_details):
+    async def get_jobs(self, company_details):
 
-        resp = super().search_jobs(
-            keywords=company_details['display_name'],
-            companies=[company_details['internal_id']],
-            remote=True, listed_at=24 * 60 * 60 * 1000
+        resp = await self.asyncronize(
+            partial(
+                super().search_jobs,
+                keywords=company_details['display_name'],
+                companies=[company_details['internal_id']],
+                remote=True, listed_at=24 * 60 * 60 * 1000
+            )
         )
 
         return [
@@ -112,10 +121,9 @@ class LinkedInExtented(Linkedin):
             ).get('company', ':').split(':')[-1]==company_details['internal_id']
         ]
 
-    def get_company_posts(self, company_details):
-        resp = super().get_company_updates(
-            public_id=company_details['internal_id'],
-            urn_id=None, max_results=None, results=[]
+    async def get_company_posts(self, company_details):
+        resp = await self.asyncronize(
+            super().get_company_updates, company_details['internal_id']
         )
         render_api = 'com.linkedin.voyager.feed.render.UpdateV2'
         return [
@@ -156,19 +164,28 @@ class LinkedInExtented(Linkedin):
             } for i in resp
         ]
 
-    def get_company_events(self, company_details):
+    async def get_company_events(self, company_details):
         universal_name = company_details['universal_name']
         return {
-            "UPCOMING": self._get_company_events(universal_name, "UPCOMING"),
-            "TODAY": self._get_company_events(universal_name, "TODAY"),
-            "PAST": self._get_company_events(universal_name, "PAST"),
+            "UPCOMING": await self.asyncronize(
+                self._get_company_events, universal_name, "UPCOMING"
+            ),
+            "TODAY": await self.asyncronize(
+                self._get_company_events, universal_name, "TODAY"
+            ),
+            "PAST": await self.asyncronize(
+                self._get_company_events, universal_name, "PAST"
+            ),
         }
 
-    def get_employees(self, company_details):
+    async def get_employees(self, company_details):
 
-        resp = super().search_people(
-            keyword_company=company_details['display_name'],
-            current_company=[company_details['internal_id']],
+        resp = await self.asyncronize(
+            partial(
+                super().search_people,
+                keyword_company=company_details['display_name'],
+                current_company=[company_details['internal_id']]
+            )
         )
 
         public_id_list = list(set([i['public_id'] for i in resp]))
@@ -177,40 +194,54 @@ class LinkedInExtented(Linkedin):
 
         for public_id in public_id_list:
             result.append({
-                **self.get_profile(public_id),
-                **self.get_profile_contact_info(public_id),
-                **self.get_profile_network_info(public_id),
-                "skills": [i['name'] for i in self.get_profile_skills(public_id)]
+                **await self.asyncronize(self.get_profile, public_id),
+                **await self.asyncronize(self.get_profile_contact_info, public_id),
+                **await self.asyncronize(self.get_profile_network_info, public_id),
+                "skills": [
+                    i['name'] for i in await self.asyncronize(
+                        self.get_profile_skills, public_id
+                    )
+                ]
             })
 
         return result
 
-@celery.task()
-def get_all_details(linkedin_email, linkedin_password, company_details, jobs=False, posts=False, employees=False, events=False):
+    @staticmethod
+    @celery.task(autoretry_for=(Exception,), retry_kwargs={'max_retries': 3, 'countdown': 300})
+    def get_all_details(linkedin_email, linkedin_password, company_details, jobs=False, posts=False, employees=False, events=False):
+        linked_in = LinkedInExtented(linkedin_email, linkedin_password)
+        final_company_details = deepcopy(company_details)
 
-    linked_in = LinkedInExtented(linkedin_email, linkedin_password)
-    final_company_details = deepcopy(company_details)
+        if jobs:
+            final_company_details['jobs'] = linked_in.loop.run_until_complete(
+                linked_in.get_jobs(company_details)
+            )
 
-    if jobs:
-        final_company_details['jobs'] = linked_in.get_jobs(company_details)
+        if posts:
+            final_company_details['posts'] = linked_in.loop.run_until_complete(
+                linked_in.get_company_posts(company_details)
+            )
 
-    if posts:
-        final_company_details['posts'] = linked_in.get_company_posts(company_details)
+        if employees:
+            final_company_details['employees'] = linked_in.loop.run_until_complete(
+                linked_in.get_employees(company_details)
+            )
 
-    if employees:
-        final_company_details['employees'] = linked_in.get_employees(company_details)
-
-    if events:
-        final_company_details['events'] = linked_in.get_company_events(company_details)
-
-
-linkedin_email = "agarwal.parth.101@gmail.com" # place your linkedin login email
-linkedin_password = "32432"
+        if events:
+            final_company_details['events'] = linked_in.loop.run_until_complete(
+                linked_in.get_company_events(company_details)
+            )
 
 
-l = LinkedInExtented(linkedin_email, linkedin_password)
-c = l.get_company("innovaccer")
-# j = l.get_jobs(c)
-# u = l.get_company_posts(c)
-# p = l.get_employees(c)
-e = l.get_company_events(c)
+if __name__ == "__main__":
+    import os
+
+    from dotenv import load_dotenv
+
+
+    load_dotenv()
+
+
+    li = LinkedInExtented(os.getenv("LI_EMAIL"), os.getenv("LI_PASSWORD"))
+    c = li.get_company(company_link='https://www.linkedin.com/company/appsmith-au/')
+    al = LinkedInExtented.get_all_details(os.getenv("LI_EMAIL"), os.getenv("LI_PASSWORD"), c, events=True)
