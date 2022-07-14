@@ -1,3 +1,6 @@
+database:
+	flask db upgrade
+
 server:
 	gunicorn wsgi:application
 
