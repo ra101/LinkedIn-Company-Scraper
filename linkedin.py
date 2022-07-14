@@ -4,8 +4,6 @@ from copy import deepcopy
 
 from linkedin_api.linkedin import Linkedin, default_evade
 
-from celery_queue import celery
-
 
 class UnImplementedError(Exception):
     pass
@@ -129,7 +127,6 @@ class LinkedInExtented(Linkedin):
         return [
             {
                 "link": i['permalink'],
-                "meta": i['value'][render_api]['updateMetadata'],
                 "content": i['value'][render_api]['content'],
                 "commentary": i['value'][render_api].get('commentary', '')
             }
@@ -157,8 +154,10 @@ class LinkedInExtented(Linkedin):
 
         return [
             {
+                "event_id": i.get('eventResolutionResult', {}).get('vanityName'),
+                "state": i.get('eventResolutionResult', {}).get("lifecycleState"),
                 "name": i.get('eventResolutionResult', {}).get('localizedName'),
-                "description": i.get('eventResolutionResult', {}).get('localizedDescription'),
+                "description": i.get('eventResolutionResult', {}).get('localizedDescription', {}).get('text'),
                 "display_time": i.get('eventResolutionResult', {}).get('displayEventTime', {}).get('text'),
                 "attendee_count": i.get('attendeeCount'),
             } for i in resp
@@ -194,6 +193,7 @@ class LinkedInExtented(Linkedin):
 
         for public_id in public_id_list:
             result.append({
+                "public_id": public_id,
                 **await self.asyncronize(self.get_profile, public_id),
                 **await self.asyncronize(self.get_profile_contact_info, public_id),
                 **await self.asyncronize(self.get_profile_network_info, public_id),
@@ -201,36 +201,10 @@ class LinkedInExtented(Linkedin):
                     i['name'] for i in await self.asyncronize(
                         self.get_profile_skills, public_id
                     )
-                ]
+                ],
             })
 
         return result
-
-    @staticmethod
-    @celery.task(autoretry_for=(Exception,), retry_kwargs={'max_retries': 3, 'countdown': 300})
-    def get_all_details(linkedin_email, linkedin_password, company_details, jobs=False, posts=False, employees=False, events=False):
-        linked_in = LinkedInExtented(linkedin_email, linkedin_password)
-        final_company_details = deepcopy(company_details)
-
-        if jobs:
-            final_company_details['jobs'] = linked_in.loop.run_until_complete(
-                linked_in.get_jobs(company_details)
-            )
-
-        if posts:
-            final_company_details['posts'] = linked_in.loop.run_until_complete(
-                linked_in.get_company_posts(company_details)
-            )
-
-        if employees:
-            final_company_details['employees'] = linked_in.loop.run_until_complete(
-                linked_in.get_employees(company_details)
-            )
-
-        if events:
-            final_company_details['events'] = linked_in.loop.run_until_complete(
-                linked_in.get_company_events(company_details)
-            )
 
 
 # python linkedin.py -n appsmith-au -j -p -e -E
@@ -283,4 +257,4 @@ if __name__ == "__main__":
             linked_in.get_company_events(company_details)
         )
 
-    sys.stdout.write(json.dumps(final_company_details))
+    sys.stdout.write(json.dumps(final_company_details['events']))

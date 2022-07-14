@@ -1,11 +1,18 @@
 import os
+from copy import deepcopy
 
 from dotenv import load_dotenv
 from flask import Flask, request
+from flask_migrate import Migrate
 
-from linkedin import LinkedInExtented, get_all_details
-from models import db
-
+try:
+    from .celery_queue import celery
+    from .linkedin import LinkedInExtented
+    from .models import db, CompanyBaseDetails
+except:
+    from celery_queue import celery
+    from linkedin import LinkedInExtented
+    from models import db, CompanyBaseDetails
 
 load_dotenv()
 
@@ -72,17 +79,46 @@ def scrape():
     return response
 
 
+@celery.task(autoretry_for=(Exception,), retry_kwargs={'max_retries': 3, 'countdown': 300})
+def scrape_and_save(company_details, jobs=False, posts=False, employees=False, events=False):
+    linked_in = LinkedInExtented(linkedin_email, linkedin_password)
+
+    # company_instance = db.session.query(CompanyBaseDetails).get(company_details['internal_id'])
+
+    final_company_details = deepcopy(company_details)
+
+    if jobs:
+        final_company_details['jobs'] = linked_in.loop.run_until_complete(
+            linked_in.get_jobs(company_details)
+        )
+
+    if posts:
+        final_company_details['posts'] = linked_in.loop.run_until_complete(
+            linked_in.get_company_posts(company_details)
+        )
+
+    if employees:
+        final_company_details['employees'] = linked_in.loop.run_until_complete(
+            linked_in.get_employees(company_details)
+        )
+
+    if events:
+        final_company_details['events'] = linked_in.loop.run_until_complete(
+            linked_in.get_company_events(company_details)
+        )
+
+
 def create_app():
 
     # database config
     app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv(
         "DATABASE_URI", "postgresql://postgres:@localhost:5432/postgres"
     )
-
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = True
+
     db.init_app(app)
+    migrate = Migrate(app, db)
     app.app_context().push()
-    db.create_all()
 
     # running Server
     app.run()
