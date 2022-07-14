@@ -233,15 +233,54 @@ class LinkedInExtented(Linkedin):
             )
 
 
+# python linkedin.py -n appsmith-au -j -p -e -E
 if __name__ == "__main__":
     import os
+    import sys
+    import json
 
+    import argparse
     from dotenv import load_dotenv
 
 
     load_dotenv()
 
+    parser = argparse.ArgumentParser(prog="LinkedIn-CLI")
 
-    li = LinkedInExtented(os.getenv("LI_EMAIL"), os.getenv("LI_PASSWORD"))
-    c = li.get_company(company_link='https://www.linkedin.com/company/appsmith-au/')
-    al = LinkedInExtented.get_all_details(os.getenv("LI_EMAIL"), os.getenv("LI_PASSWORD"), c, events=True)
+    parser.add_argument('-l', '--company_link', type=str, metavar='')
+    parser.add_argument('-n', '--company_name', type=str, metavar='')
+    parser.add_argument('-j', '--jobs', action='store_true',)
+    parser.add_argument('-p', '--posts', action='store_true')
+    parser.add_argument('-e', '--employees', action='store_true')
+    parser.add_argument('-E', '--events', action='store_true')
+
+    args = parser.parse_args()
+
+    linked_in = LinkedInExtented(os.getenv("LI_EMAIL"), os.getenv("LI_PASSWORD"))
+
+    company_details = linked_in.get_company(
+        company_username=args.company_name, company_link=args.company_link
+    )
+    final_company_details = deepcopy(company_details)
+
+    if args.jobs:
+        final_company_details['jobs'] = linked_in.loop.run_until_complete(
+            linked_in.get_jobs(company_details)
+        )
+
+    if args.posts:
+        final_company_details['posts'] = linked_in.loop.run_until_complete(
+            linked_in.get_company_posts(company_details)
+        )
+
+    if args.employees:
+        final_company_details['employees'] = linked_in.loop.run_until_complete(
+            linked_in.get_employees(company_details)
+        )
+
+    if args.events:
+        final_company_details['events'] = linked_in.loop.run_until_complete(
+            linked_in.get_company_events(company_details)
+        )
+
+    sys.stdout.write(json.dumps(final_company_details))

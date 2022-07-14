@@ -5,7 +5,8 @@ idna==3.3
 python-dotenv==0.20.0
 requests==2.28.0
 urllib3==1.26.9
-
+asyncio==3.4.3
+argparse==1.4.0
 
 # linkedin-api
 linkedin-api~=2.0.0a5
