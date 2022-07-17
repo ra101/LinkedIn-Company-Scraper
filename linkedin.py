@@ -112,7 +112,8 @@ class LinkedInExtented(Linkedin):
                 "title": i.get('title'),
                 "location": i.get('formattedLocation'),
                 "listed_at": i.get('listedAt'),
-                "expire_at": i.get('expireAt')
+                "expire_at": i.get('expireAt'),
+                "company_id": company_details['internal_id']
             }
              for i in resp if i.get(
                 'companyDetails', {}
@@ -128,7 +129,8 @@ class LinkedInExtented(Linkedin):
             {
                 "link": i['permalink'],
                 "content": i['value'][render_api]['content'],
-                "commentary": i['value'][render_api].get('commentary', '')
+                "commentary": i['value'][render_api].get('commentary', ''),
+                "company_id": company_details['internal_id']
             }
             for i in resp if 'content' in i['value'][render_api].keys()
         ]
@@ -160,6 +162,7 @@ class LinkedInExtented(Linkedin):
                 "description": i.get('eventResolutionResult', {}).get('localizedDescription', {}).get('text'),
                 "display_time": i.get('eventResolutionResult', {}).get('displayEventTime', {}).get('text'),
                 "attendee_count": i.get('attendeeCount'),
+                "company_id": company_details['internal_id'],
             } for i in resp
         ]
 
