@@ -27,12 +27,10 @@ class CompanyBaseDetails(db.Model):
     founded_on = db.Column(db.Integer())
     industry = db.Column(db.ARRAY(db.Text()))
 
-    jobs = db.relationship('linkedin_jobs_details', backref='company')
-    events = db.relationship('linkedin_events_details', backref='company')
-    posts = db.relationship('linkedin_posts_details', backref='company')
-    employees = db.relationship(
-        'linkedin_employees_details', secondary=employment_record, backref='companies'
-    )
+    jobs = db.relationship('JobDetails', backref='company')
+    events = db.relationship('EventDetails', backref='company')
+    posts = db.relationship('PostDetails', backref='company')
+    employees = db.relationship('EmployeeDetails', secondary=employment_record, backref='companies')
 
     def __repr__(self):
         return f"CompanyBaseDetails <{self.universal_name}>"
