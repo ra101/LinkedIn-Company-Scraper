@@ -1,6 +1,7 @@
 import asyncio
 from functools import partial
 from copy import deepcopy
+from datetime import datetime
 
 from linkedin_api.linkedin import Linkedin, default_evade
 
@@ -111,8 +112,8 @@ class LinkedInExtented(Linkedin):
                 "job_state": i.get('jobState'),
                 "title": i.get('title'),
                 "location": i.get('formattedLocation'),
-                "listed_at": i.get('listedAt'),
-                "expire_at": i.get('expireAt'),
+                "listed_at": str(datetime.fromtimestamp(int(i.get('listedAt', 0)))),
+                "expire_at": str(datetime.fromtimestamp(int(i.get('expireAt', 0)))),
                 "company_id": company_details['internal_id']
             }
              for i in resp if i.get(
