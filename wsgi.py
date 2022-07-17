@@ -1,6 +1,3 @@
-try:
-    from app import create_app
-except:
-    from .app import create_app
+from app import app
 
-application = create_app()
+application = app.run()
