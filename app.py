@@ -1,23 +1,43 @@
 import os
-from copy import deepcopy
 
+from celery import Celery
 from dotenv import load_dotenv
 from flask import Flask, request
 from flask_migrate import Migrate
+from sqlalchemy.inspection import inspect
 
-try:
-    from .celery_queue import celery
-    from .linkedin import LinkedInExtented
-    from .models import db, CompanyBaseDetails
-except:
-    from celery_queue import celery
-    from linkedin import LinkedInExtented
-    from models import db, CompanyBaseDetails
+import models
+from models import db
+from linkedin import LinkedInExtented
+
 
 load_dotenv()
 
 
 app = Flask("linkedin_company_scrapper")
+
+
+with app.app_context():
+    app.config.update(
+        SQLALCHEMY_TRACK_MODIFICATIONS=True,
+        SQLALCHEMY_DATABASE_URI=os.getenv(
+            "DATABASE_URI", "postgresql://postgres:@localhost:5432/postgres"
+        ),
+        CELERY_BROKER_URL=os.getenv("CELERY_BROKER_URL", "redis://localhost:6379"),
+        CELERY_RESULT_BACKEND=os.getenv("CELERY_RESULT_BACKEND", "redis://localhost:6379"),
+    )
+    db.init_app(app)
+    migrate = Migrate(app, db)
+
+    celery = Celery(
+        app.name,
+        broker_url=app.config["CELERY_BROKER_URL"],
+        result_backend=app.config["CELERY_RESULT_BACKEND"]
+    )
+
+    celery.conf.update(app.config)
+
+
 linkedin_email = os.getenv("LI_EMAIL")
 linkedin_password = os.getenv("LI_PASSWORD")
 
@@ -39,6 +59,87 @@ def schema():
     }
 
 
+def bulk_upsert(raw_data: list, model_cls: db.Model):
+    primary_key = inspect(model_cls).primary_key[0].name
+    columns = [column.name for column in inspect(model_cls).c]
+    model_ints = {
+        str(data[primary_key]): model_cls(**{c: data.get(c) for c in columns}) for data in raw_data
+    }
+
+    query_for_existing_rows = model_cls.query.filter(
+        getattr(model_cls, primary_key).in_(model_ints.keys())
+    ).all()
+
+    # update previous records
+    for instance in query_for_existing_rows:
+        db.session.merge(model_ints.pop(str(getattr(instance, primary_key))))
+
+    # create new records
+    db.session.add_all(model_ints.values())
+
+    db.session.commit()
+
+    return model_ints
+
+
+@celery.task(autoretry_for=(Exception,), retry_kwargs={'max_retries': 3, 'countdown': 300})
+def scrape_and_save(company_details, jobs=False, posts=False, employees=False, events=False):
+    linked_in = LinkedInExtented(linkedin_email, linkedin_password)
+
+    app.app_context().push()
+
+    if jobs:
+        jobs_details = linked_in.loop.run_until_complete(
+            linked_in.get_jobs(company_details)
+        )
+        if jobs_details:
+            try:
+                bulk_upsert(jobs_details, models.JobDetails)
+            except:
+                db.session.rollback()
+
+    if posts:
+        post_details = linked_in.loop.run_until_complete(
+            linked_in.get_company_posts(company_details)
+        )
+        if post_details:
+            try:
+                bulk_upsert(post_details, models.PostDetails)
+            except:
+                db.session.rollback()
+
+    if events:
+        event_details = linked_in.loop.run_until_complete(
+            linked_in.get_company_events(company_details)
+        )
+        if any(event_details.values()):
+            try:
+                bulk_upsert(
+                    event_details['UPCOMING'] + event_details['TODAY']
+                    + event_details['PAST'], models.EventDetails
+                )
+            except:
+                db.session.rollback()
+
+    if employees:
+        employee_details = linked_in.loop.run_until_complete(
+            linked_in.get_employees(company_details)
+        )
+        if employee_details:
+            try:
+                employee_ints = bulk_upsert(employee_details, models.EmployeeDetails)
+
+                if employee_ints:
+                    company_instance = db.session.query(
+                        models.CompanyBaseDetails
+                    ).get(company_details['internal_id'])
+
+                    company_instance.employees.extend(employee_ints.values())
+                    db.session.commit()
+            except:
+                db.session.rollback()
+
+
 @app.route("/scrape", methods=["POST"])
 def scrape():
     body = request.json
@@ -56,7 +157,7 @@ def scrape():
     try:
         linked_in = LinkedInExtented(linkedin_email, linkedin_password)
     except Exception:
-        return ({"error": "enable to login, check credentials in .env"}, 500)
+        return ({"error": "unable to login, check credentials in .env"}, 500)
 
 
     try:
@@ -68,7 +169,14 @@ def scrape():
         return ({"error": "Invalid Company Name or Link"}, 400)
 
 
-    get_all_details.delay(linkedin_email, linkedin_password, company_details, **response)
+    try:
+        bulk_upsert([company_details], models.CompanyBaseDetails)
+    except Exception:
+        return ({"error": "unable to do database operations"}, 500)
+
+
+    if any(response.values()):
+        scrape_and_save.delay(company_details, **response)
 
     if company_name:
         response["company_name"] = company_name
@@ -79,50 +187,5 @@ def scrape():
     return response
 
 
-@celery.task(autoretry_for=(Exception,), retry_kwargs={'max_retries': 3, 'countdown': 300})
-def scrape_and_save(company_details, jobs=False, posts=False, employees=False, events=False):
-    linked_in = LinkedInExtented(linkedin_email, linkedin_password)
-
-    # company_instance = db.session.query(CompanyBaseDetails).get(company_details['internal_id'])
-
-    final_company_details = deepcopy(company_details)
-
-    if jobs:
-        final_company_details['jobs'] = linked_in.loop.run_until_complete(
-            linked_in.get_jobs(company_details)
-        )
-
-    if posts:
-        final_company_details['posts'] = linked_in.loop.run_until_complete(
-            linked_in.get_company_posts(company_details)
-        )
-
-    if employees:
-        final_company_details['employees'] = linked_in.loop.run_until_complete(
-            linked_in.get_employees(company_details)
-        )
-
-    if events:
-        final_company_details['events'] = linked_in.loop.run_until_complete(
-            linked_in.get_company_events(company_details)
-        )
-
-
-def create_app():
-
-    # database config
-    app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv(
-        "DATABASE_URI", "postgresql://postgres:@localhost:5432/postgres"
-    )
-    app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = True
-
-    db.init_app(app)
-    migrate = Migrate(app, db)
-    app.app_context().push()
-
-    # running Server
-    app.run()
-
-
 if __name__ == "__main__":
-    create_app()
+    app.run()
