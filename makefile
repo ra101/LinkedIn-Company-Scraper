@@ -1,8 +1,8 @@
-database:
-	flask db upgrade
-
 server:
 	gunicorn wsgi:application
 
 celery:
-	celery --app celery_queue.celery worker --loglevel=info
+	celery --app app.celery worker --loglevel=debug
+
+flower:
+	celery --app app.celery flower
