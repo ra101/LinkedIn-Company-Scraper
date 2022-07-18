@@ -61,7 +61,7 @@ class EventDetails(db.Model):
     state = db.Column(db.Text())
     name = db.Column(db.Text())
     description = db.Column(db.Text())
-    display_time = db.Column(db.DateTime())
+    display_time = db.Column(db.Text())
     attendee_count = db.Column(db.BigInteger())
 
     company_id = db.Column(

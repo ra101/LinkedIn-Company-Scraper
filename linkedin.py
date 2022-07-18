@@ -112,8 +112,8 @@ class LinkedInExtented(Linkedin):
                 "job_state": i.get('jobState'),
                 "title": i.get('title'),
                 "location": i.get('formattedLocation'),
-                "listed_at": str(datetime.fromtimestamp(int(i.get('listedAt', 0)))),
-                "expire_at": str(datetime.fromtimestamp(int(i.get('expireAt', 0)))),
+                "listed_at": str(datetime.fromtimestamp(int(i.get('listedAt', 0)/1000))),
+                "expire_at": str(datetime.fromtimestamp(int(i.get('expireAt', 0)/1000))),
                 "company_id": company_details['internal_id']
             }
              for i in resp if i.get(
@@ -136,10 +136,10 @@ class LinkedInExtented(Linkedin):
             for i in resp if 'content' in i['value'][render_api].keys()
         ]
 
-    def _get_company_events(self, universal_name, time_frame):
+    def _get_company_events(self, company_details, time_frame):
         params = {
             "decorationId": "com.linkedin.voyager.deco.organization.web.WebListedOrganizationEvent-6",
-            "organizationIdOrUniversalName": universal_name,
+            "organizationIdOrUniversalName": company_details['universal_name'],
             "q": "timeFrame", "timeFrame": time_frame, "start": 0, "count": 100
         }
 
@@ -168,16 +168,15 @@ class LinkedInExtented(Linkedin):
         ]
 
     async def get_company_events(self, company_details):
-        universal_name = company_details['universal_name']
         return {
             "UPCOMING": await self.asyncronize(
-                self._get_company_events, universal_name, "UPCOMING"
+                self._get_company_events, company_details, "UPCOMING"
             ),
             "TODAY": await self.asyncronize(
-                self._get_company_events, universal_name, "TODAY"
+                self._get_company_events, company_details, "TODAY"
             ),
             "PAST": await self.asyncronize(
-                self._get_company_events, universal_name, "PAST"
+                self._get_company_events, company_details, "PAST"
             ),
         }
 
