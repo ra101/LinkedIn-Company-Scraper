@@ -122,22 +122,26 @@ def scrape_and_save(company_details, jobs=False, posts=False, employees=False, e
                 db.session.rollback()
 
     if employees:
-        employee_details = linked_in.loop.run_until_complete(
-            linked_in.get_employees(company_details)
-        )
-        if employee_details:
-            try:
-                employee_ints = bulk_upsert(employee_details, models.EmployeeDetails)
 
-                if employee_ints:
-                    company_instance = db.session.query(
-                        models.CompanyBaseDetails
-                    ).get(company_details['internal_id'])
+        func_list = linked_in.loop.run_until_complete(
+            linked_in.get_employees_functions(company_details)
+        )
+
+        company_instance = db.session.query(
+            models.CompanyBaseDetails
+        ).get(company_details['internal_id']) if func_list else None
+
+        for func in func_list:
+            employee_details = linked_in.loop.run_until_complete(func())
+
+            if employee_details:
+                try:
+                    employee_ints = bulk_upsert(employee_details, models.EmployeeDetails)
 
                     company_instance.employees.extend(employee_ints.values())
                     db.session.commit()
-            except:
-                db.session.rollback()
+                except:
+                    db.session.rollback()
 
 
 @app.route("/scrape", methods=["POST"])

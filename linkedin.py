@@ -2,6 +2,7 @@ import asyncio
 from functools import partial
 from copy import deepcopy
 from datetime import datetime
+from time import sleep as blocking_sleep
 
 from linkedin_api.linkedin import Linkedin, default_evade
 
@@ -180,17 +181,9 @@ class LinkedInExtented(Linkedin):
             ),
         }
 
-    async def get_employees(self, company_details):
+    async def _get_employees(self, public_id_list):
 
-        resp = await self.asyncronize(
-            partial(
-                super().search_people,
-                keyword_company=company_details['display_name'],
-                current_company=[company_details['internal_id']]
-            )
-        )
-
-        public_id_list = list(set([i['public_id'] for i in resp]))
+        blocking_sleep(300)
 
         result = []
 
@@ -208,6 +201,31 @@ class LinkedInExtented(Linkedin):
             })
 
         return result
+
+
+    async def get_employees_functions(self, company_details):
+
+        resp = await self.asyncronize(
+            partial(
+                super().search_people,
+                keyword_company=company_details['display_name'],
+                current_company=[company_details['internal_id']]
+            )
+        )
+
+        public_id_megalist = list(set([i['public_id'] for i in resp]))
+
+        public_id_chunks = [
+            public_id_megalist[i:i + 1] for i in range(0, len(public_id_megalist), 1)
+        ]
+
+        function_list = []
+
+        for public_id_list in public_id_chunks:
+            function_list.append(
+                partial(self._get_employees, public_id_list=public_id_list)
+            )
+        return function_list
 
 
 # python linkedin.py -n appsmith-au -j -p -e -E
@@ -251,9 +269,16 @@ if __name__ == "__main__":
         )
 
     if args.employees:
-        final_company_details['employees'] = linked_in.loop.run_until_complete(
-            linked_in.get_employees(company_details)
+        final_company_details['employees'] = []
+
+        func_list = linked_in.loop.run_until_complete(
+            linked_in.get_employees_functions(company_details)
         )
+
+        for func in func_list:
+            final_company_details['employees'].append(
+                linked_in.loop.run_until_complete(func())
+            )
 
     if args.events:
         final_company_details['events'] = linked_in.loop.run_until_complete(
