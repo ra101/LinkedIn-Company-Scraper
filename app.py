@@ -14,8 +14,22 @@ from linkedin import LinkedInExtented
 load_dotenv()
 
 
-app = Flask("linkedin_company_scrapper")
+li_array_len, li_creds, os.environ['LI_CURRENT_IDX'] = int(os.getenv("LI_ARRAY_LEN", 0)), [], "0"
 
+if li_array_len:
+    for i in range(0, li_array_len):
+        li_temp_email, li_temp_pass = os.getenv(f"LI_EMAIL_{i}"), os.getenv(f"LI_PASS_{i}")
+        if li_temp_email and li_temp_pass:
+            li_creds.append({"username": li_temp_email, "password": li_temp_pass})
+else:
+    li_creds.append({"username": os.getenv("LI_EMAIL"), "password": os.getenv("LI_PASS")})
+
+def get_li_creds():
+    os.environ['LI_CURRENT_IDX'] = str((int(os.environ['LI_CURRENT_IDX']) + 1) % max(li_array_len , 1))
+    return li_creds[int(os.environ['LI_CURRENT_IDX'])]
+
+
+app = Flask("linkedin_company_scrapper")
 
 with app.app_context():
     app.config.update(
@@ -36,11 +50,6 @@ with app.app_context():
     )
 
     celery.conf.update(app.config)
-
-
-linkedin_email = os.getenv("LI_EMAIL")
-linkedin_password = os.getenv("LI_PASSWORD")
-
 
 @app.route("/")
 def hello_world():
@@ -84,7 +93,7 @@ def bulk_upsert(raw_data: list, model_cls: db.Model):
 
 @celery.task(autoretry_for=(Exception,), retry_kwargs={'max_retries': 3, 'countdown': 300})
 def scrape_and_save(company_details, jobs=False, posts=False, employees=False, events=False):
-    linked_in = LinkedInExtented(linkedin_email, linkedin_password)
+    linked_in = LinkedInExtented(**get_li_creds())
 
     app.app_context().push()
 
@@ -159,7 +168,7 @@ def scrape():
         return ({"error": "Provide atleast `company_name` or `company_link`"}, 400)
 
     try:
-        linked_in = LinkedInExtented(linkedin_email, linkedin_password)
+        linked_in = LinkedInExtented(**get_li_creds())
     except Exception:
         return ({"error": "unable to login, check credentials in .env"}, 500)
 

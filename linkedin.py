@@ -228,6 +228,11 @@ class LinkedInExtented(Linkedin):
         return function_list
 
 
+def get_li_creds():
+    os.environ['LI_CURRENT_IDX'] = str((int(os.environ['LI_CURRENT_IDX']) + 1) % max(li_array_len , 1))
+    return li_creds[int(os.environ['LI_CURRENT_IDX'])]
+
+
 # python linkedin.py -n appsmith-au -j -p -e -E
 if __name__ == "__main__":
     import os
@@ -240,6 +245,17 @@ if __name__ == "__main__":
 
     load_dotenv()
 
+
+    li_array_len, li_creds, os.environ['LI_CURRENT_IDX'] = int(os.getenv("LI_ARRAY_LEN", 0)), [], "0"
+
+    if li_array_len:
+        for i in range(0, li_array_len):
+            li_temp_email, li_temp_pass = os.getenv(f"LI_EMAIL_{i}"), os.getenv(f"LI_PASS_{i}")
+            if li_temp_email and li_temp_pass:
+                li_creds.append({"username": li_temp_email, "password": li_temp_pass})
+    else:
+        li_creds.append({"username": os.getenv("LI_EMAIL"), "password": os.getenv("LI_PASS")})
+
     parser = argparse.ArgumentParser(prog="LinkedIn-CLI")
 
     parser.add_argument('-l', '--company_link', type=str, metavar='')
@@ -251,7 +267,7 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    linked_in = LinkedInExtented(os.getenv("LI_EMAIL"), os.getenv("LI_PASSWORD"))
+    linked_in = LinkedInExtented(**get_li_creds())
 
     company_details = linked_in.get_company(
         company_username=args.company_name, company_link=args.company_link
@@ -285,4 +301,4 @@ if __name__ == "__main__":
             linked_in.get_company_events(company_details)
         )
 
-    sys.stdout.write(json.dumps(final_company_details['events']))
+    sys.stdout.write(json.dumps(final_company_details))
