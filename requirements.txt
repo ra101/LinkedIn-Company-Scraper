@@ -59,3 +59,6 @@ flower==1.1.0
 humanize==4.2.3
 prometheus-client==0.14.1
 tornado==6.2
+
+# Supervisor
+supervisor-4.2.4
