@@ -110,7 +110,7 @@ class EmployeeDetails(db.Model):
     email_address = db.Column(db.Text())
     websites = db.Column(db.ARRAY(db.JSON()))
     twitter = db.Column(db.ARRAY(db.JSON()))
-    birthdate = db.Column(db.DateTime())
+    birthdate = db.Column(db.JSON())
     phone_numbers = db.Column(db.ARRAY(db.JSON()))
     followable = db.Column(db.Boolean())
     followersCount = db.Column(db.BigInteger())
