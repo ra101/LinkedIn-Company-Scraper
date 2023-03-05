@@ -267,7 +267,7 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    linked_in = LinkedInExtented(**get_li_creds())
+    linked_in = LinkedInExtented(**get_li_creds(), refresh_cookies=False)
 
     company_details = linked_in.get_company(
         company_username=args.company_name, company_link=args.company_link
